@@ -16,12 +16,6 @@
 #define BACKLOG     10  /* Passed to listen() */
 #define MAXBUF		1024
 
-void handle(int newsock, fd_set *set)
-{
-    /* send(), recv(), close() */
-    /* Call FD_CLR(newsock, set) on disconnection */
-}
-
 int main(void)
 {
     int sock;

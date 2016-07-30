@@ -20,14 +20,14 @@ void handle_sigchld(int sig) {
 }
 
 void reg_handler() { 
-  struct sigaction sa;
-  sa.sa_handler = &handle_sigchld;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
-  if (sigaction(SIGCHLD, &sa, 0) == -1) {
-    perror(0);
-    exit(1);
-  }
+    struct sigaction sa;
+    sa.sa_handler = &handle_sigchld;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+    if (sigaction(SIGCHLD, &sa, 0) == -1) {
+        perror(0);
+        exit(1);
+    }
 } 
 
 // fn pointers to real libc calls
@@ -41,119 +41,90 @@ int child_accept_fd = -1;
 int is_child = 0; 
 
 void reg_all_fn() { 
-  real_select_fn = dlsym(RTLD_NEXT, "select");
-  real_close_fn = dlsym(RTLD_NEXT, "close");
-  real_accept_fn = dlsym(RTLD_NEXT, "accept");
-  reg_handler();   
+    real_select_fn = dlsym(RTLD_NEXT, "select");
+    real_close_fn = dlsym(RTLD_NEXT, "close");
+    real_accept_fn = dlsym(RTLD_NEXT, "accept");
+    reg_handler();   
 } 
 
 
 int select(int nfds, fd_set* readfds, fd_set *writefds, fd_set *except_fds, 
-	   struct timeval *timeout) { 
-   if (!real_select_fn) {
-     reg_all_fn();  
-   }
-   printf("in select (pid = %d)!\n", getpid());
-   parent_readfds = readfds;
-   int res = 0;
-   while(1) { 
-      res = real_select_fn(nfds, readfds, writefds, except_fds, timeout);
-      if (res == -1 && errno == EINTR) { 
-        printf("ignoring interrupted selected call\n"); 
-      } else { 
-        return res;  
-      } 
-   } 
-} 
-
-int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){ 
-   
-   printf("Accept on server socket %d\n", sockfd); 
-   if (!real_accept_fn) { 
-     reg_all_fn();  
-   }
-
-        int fd = real_accept_fn(sockfd, addr, addrlen);
-        int pid = fork(); 
-   	if (pid == 0) { 
-	   // child
-           is_child = 1;  
-           child_accept_fd = fd; 
-           printf("child accept - pid = %d\n", getpid());
-   	   return fd;     
+       struct timeval *timeout) { 
+    if (!real_select_fn) {
+        reg_all_fn();  
+    }
+    printf("in select (pid = %d)!\n", getpid());
+    parent_readfds = readfds;
+    int res = 0;
+    while(1) { 
+        res = real_select_fn(nfds, readfds, writefds, except_fds, timeout);
+        if (res == -1 && errno == EINTR) { 
+            printf("ignoring interrupted selected call\n"); 
         } else { 
-           // parent just closes sock, then 
-           // loops around to get another request
-	   if (pid == -1) { 
-               perror("fork"); 
-           }
-           FD_CLR(sockfd, parent_readfds);  
-           real_close_fn(fd);
-           return -1; 
-	} 
+            return res;  
+        } 
+    } 
 } 
 
-/*
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){ 
    
-   fd_set read_fd_set; 
+    printf("Accept on server socket %d\n", sockfd); 
+    if (!real_accept_fn) { 
+        reg_all_fn();  
+    }
 
-   printf("Accept on server socket %d\n", sockfd); 
-   if (!real_accept_fn) { 
-     reg_all_fn();  
-   }
-
-   while(1) { 
-        FD_ZERO(&read_fd_set); 
-        FD_SET(sockfd, &read_fd_set); 
-        if (select(sockfd + 1, &read_fd_set, NULL, NULL, NULL) < 0) { 
-          perror("select"); 
-          exit(EXIT_FAILURE); 
+    int fd = real_accept_fn(sockfd, addr, addrlen);
+    int pid = fork(); 
+    if (pid == 0) { 
+        // child
+        is_child = 1;  
+        child_accept_fd = fd; 
+        printf("child accept - pid = %d\n", getpid());
+        return fd;     
+    } else { 
+        // parent just closes sock, then 
+        // loops around to get another request
+        if (pid == -1) { 
+            perror("fork"); 
         }
-        printf("select returned\n");  
-   	if (!fork()) { 
-           int fd = real_accept_fn(sockfd, addr, addrlen);
-	   // child
-           is_child = 1;  
-           child_accept_fd = fd; 
-           printf("child accept - pid = %d\n", getpid());
-   	   return fd;     
-        }
-        // parent just loops around to get another request 
-   } 
+        printf("parent accept - pid = %d \n", getpid());
+        if(parent_readfds) { 
+            FD_CLR(sockfd, parent_readfds);
+        }  
+        real_close_fn(fd);
+        return -1; 
+    } 
 } 
-*/
-
 
 int close(int fd) {
-   if (!real_close_fn) { 
-     reg_all_fn();  
-   } 
-   if (is_child && child_accept_fd == fd) { 
+    if (!real_close_fn) { 
+        reg_all_fn();  
+    } 
+    if (is_child && child_accept_fd == fd) { 
         // child
-  	pid_t pid = getpid();
+        pid_t pid = getpid();
         printf("child close \n");  
         real_close_fn(fd);/* 
         // TODO:  get per-process usage info.  
-	char smaps_fname[64]; 
-	char output_fname[64]; 
-	snprintf(smaps_fname, 64, "/proc/%d/smaps", pid);
-	snprintf(output_fname, 64, "/tmp/tetra-%d.out", pid);
-	cp(output_fname, smaps_fname);  
+        char smaps_fname[64]; 
+        char output_fname[64]; 
+        snprintf(smaps_fname, 64, "/proc/%d/smaps", pid);
+        snprintf(output_fname, 64, "/tmp/tetra-%d.out", pid);
+        cp(output_fname, smaps_fname);  
         */
-	printf("closing socket %d, exiting pid %d \n", fd, pid);
-	exit(0);  
-   } else if (is_child) { 
-     // other child close
-     printf("other child close \n"); 
-  } else { 
-      // parent  
-      printf("parent close \n");  
-      return real_close_fn(fd); 
-  } 
+        printf("closing socket %d, exiting pid %d \n", fd, pid);
+        exit(0);  
+    } else if (is_child) { 
+        // other child close
+        printf("other child close \n"); 
+    } else { 
+        // parent  
+        printf("parent close \n");  
+        return real_close_fn(fd); 
+    } 
 } 
 
-// generic copy file function 
+// generic copy file function (borrowed from internet) 
 int cp(const char *to, const char *from)
 {
     int fd_to, fd_from;
