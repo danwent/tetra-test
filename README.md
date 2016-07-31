@@ -16,4 +16,9 @@ Run the select()-based server (listens on port 8000):
 
 LD_PRELOAD=./libtetra.so ./select-server
 
+Building and Running the Docker Container: 
+
+docker build -t basic-python-web .
+
+docker run -it -p 8000:8000 -v /Users/danwent/tetra:/tetra basic-python-web
 
