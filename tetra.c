@@ -10,7 +10,12 @@
 #include <signal.h> 
 #include <fcntl.h>
 #include <errno.h>
+#include <string.h> 
 
+#define DATA_FNAME "tetra-data.txt" 
+
+struct timeval start, end;
+char method[10], url[1024], params[1024];  
 
 int cp(const char *to, const char *from);
 
@@ -66,6 +71,59 @@ int select(int nfds, fd_set* readfds, fd_set *writefds, fd_set *except_fds,
     } 
 } 
 
+void parse_http_req(int sockfd) { 
+    char buf[2048]; 
+    // only peek at data, so app sees the HTTP request as well 
+    int size = recv(sockfd, buf, 2048, MSG_PEEK); // TODO: handle small reads
+    printf("peek read %d bytes \n", size); 
+    *(buf + size) = 0; // null terminate
+    char * start = buf;  
+    char * end = strstr(start, "\r\n"); // gcc not happy with strnstr? 
+    if (end == NULL) { 
+        printf("Unable to parse HTTP request %s\n", buf); 
+        exit(1);  // TODO: fail gracefully 
+    }    
+    printf("found CRLF\n");  
+    *end = 0; // only look at first line
+    printf("first line = '%s'\n", start);    
+ 
+    // get method 
+    end = strstr(start," ");
+    printf("end = '%s'\n", end);  
+    printf("start = '%s'\n", start);  
+    if (!end) { 
+        printf("malformed http request (no method): %s\n", buf); 
+        exit(1);  
+    } 
+
+    *end = 0; 
+    strncpy(method, start,10);
+    printf("method = '%s'\n", method);  
+
+    // get URL 
+   start = end + 1;   
+    end = strstr(start, "?");
+    if (!end) { 
+        printf("malformed http request (no url): %s\n", buf); 
+        exit(1);  
+    } 
+    *end = 0; 
+    strncpy(url, start, 1024); 
+    printf("url = '%s'\n", url);  
+
+    // get query params
+    start = end + 1; 
+    end = strstr(start, " "); 
+    if (!end) { 
+        printf("malformed http request (no params): %s\n", buf); 
+        exit(1);  
+    } 
+    *end = 0; 
+    strncpy(params, start, 1024);
+
+    printf("params = '%s'\n", params);  
+} 
+
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){ 
    
     printf("Accept on server socket %d\n", sockfd); 
@@ -78,7 +136,11 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){
     if (pid == 0) { 
         // child
         is_child = 1;  
-        child_accept_fd = fd; 
+        child_accept_fd = fd;
+        parse_http_req(fd); 
+ 
+        // start latency measurement for this request
+        gettimeofday(&start, NULL);  
         printf("child accept - pid = %d\n", getpid());
         return fd;     
     } else { 
@@ -104,8 +166,9 @@ int close(int fd) {
         // child
         pid_t pid = getpid();
         printf("child close \n");  
-        real_close_fn(fd);/* 
-        // TODO:  get per-process usage info.  
+        real_close_fn(fd);
+        /* 
+        // TODO:  get per-process memory usage info.  
         char smaps_fname[64]; 
         char output_fname[64]; 
         snprintf(smaps_fname, 64, "/proc/%d/smaps", pid);
@@ -113,6 +176,15 @@ int close(int fd) {
         cp(output_fname, smaps_fname);  
         */
         printf("closing socket %d, exiting pid %d \n", fd, pid);
+        gettimeofday(&end, NULL); 
+        long total_usec =  (end.tv_sec - start.tv_sec)*1000000L
+           + (end.tv_usec - start.tv_usec);  
+        printf("execution duration is %ld usec, pid = %d\n", 
+               total_usec, getpid());
+
+        FILE *data_file = fopen(DATA_FNAME, "a"); 
+        fprintf(data_file, "%s,%s,%s,%ld\n", url, method, params, total_usec);
+        fclose(data_file);   
         exit(0);  
     } else if (is_child) { 
         // other child close
