@@ -33,6 +33,8 @@
 #include <resolv.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <unistd.h>
+#include <string.h> 
 
 #define MY_PORT		8000
 #define MAXBUF		1024
@@ -94,8 +96,46 @@ int main(int Count, char *Strings[])
 
 		printf("%s:%d connected\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
+        int size = recv(clientfd, buffer, MAXBUF, 0);
+        char *start = strstr(buffer, "?"); 
+        char *end = strstr(start, " "); 
+        int len = (int)(end - start); 
+        char params[256]; 
+        memcpy(params, start + 1, len); 
+        *(start + len) = 0; // null terminate
+        printf("params = %s \n", params);
+        char *cur = start + 1, *split = NULL;
+        int arr[3] = { -1, -1, -1 }; 
+        int i;  
+        for(i = 0; i < 3; i++) { 
+            split = strstr(cur,"&"); 
+            if(split) { 
+                *split = 0;
+            } 
+            char *eq = strstr(cur,"="); 
+            if(eq) {  
+                arr[i] = atoi(eq + 1);
+            }       
+            if(split) { 
+                cur = split + 1;
+            } 
+        }  
+        printf("a = %d  b = %d  c = %d \n", arr[0], arr[1], arr[2]);
+        int j,k;
+        // make latency O(a^2)
+        for(j = 0; j < arr[0]; j++){ 
+            for(k = 0; k < arr[0]; k++) { 
+                usleep(100); 
+            } 
+        }  
+        // make latency O(b) 
+        for(j = 0; j < arr[1]; j++) { 
+            usleep(100); 
+        } 
+        // have latency be O(1) with respect to c. 
+
 		/*---Echo back anything sent---*/
-		send(clientfd, buffer, recv(clientfd, buffer, MAXBUF, 0), 0);
+		send(clientfd, buffer, size, 0);
 	        printf("data sent, close next (pid = %d)\n", getpid()); 
 		/*---Close data connection---*/
 		close(clientfd);
