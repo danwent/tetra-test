@@ -84,33 +84,49 @@ implemented using libuv:  https://github.com/libuv/libuv/blob/v1.x/src/unix/linu
 
 
 apt-get install -y nodejs npm 
+
 git clone https://github.com/heroku/node-js-getting-started.git
+
 cd node-js-getting-started
+
 npm install
+
 LD_PRELOAD=../libtetra.so PORT=8000 nodejs index.js 
 
 ## Ruby-on-Rails 
 
 cd
+
 git clone https://github.com/rbenv/rbenv.git ~/.rbenv
+
 echo 'export PATH="$HOME/.rbenv/bin:$PATH"' >> ~/.bashrc
+
 echo 'eval "$(rbenv init -)"' >> ~/.bashrc
+
 exec $SHELL
 
 git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build
+
 echo 'export PATH="$HOME/.rbenv/plugins/ruby-build/bin:$PATH"' >> ~/.bashrc
+
 exec $SHELL
 
 rbenv install 2.3.1
+
 rbenv global 2.3.1
 
 gem install bundler
+
 rbenv rehash
+
 gem install rails -v 4.2.6
 
-rails new myapp
-cd myapp
+rails new my-rails-app
+
+cd my-rails-app
+
 bundle install
+
 rails generate controller welcome
 
 [edit app/views/welcome/index.html.erb to include "hello world"]
@@ -122,7 +138,7 @@ LD_PRELOAD=../libtetra.so rails server -p8000
 Note: it is recommended to access this server via localhost:8000 due to some
 rails wierdness that I have yet to investigate. 
 
-TODO: 
+## TODO: 
 - Get data points on actual COW memory overhead.  I think we can use 
 /proc/<pid>/smaps, which will distinguish between 'shared' pages and
 'dirty' pages.  Dirty is what we care about, as they are unique to the 
