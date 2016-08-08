@@ -82,6 +82,7 @@ a sys-call directly using the sys-call function.  We shoud be able to
 hook the syscall function and interpose there as well.  With nodejs, this is
 implemented using libuv:  https://github.com/libuv/libuv/blob/v1.x/src/unix/linux-syscalls.c#L241
 
+
 apt-get install -y nodejs npm 
 git clone https://github.com/heroku/node-js-getting-started.git
 cd node-js-getting-started
@@ -120,4 +121,20 @@ LD_PRELOAD=../libtetra.so rails server -p8000
 
 Note: it is recommended to access this server via localhost:8000 due to some
 rails wierdness that I have yet to investigate. 
+
+TODO: 
+- Get data points on actual COW memory overhead.  I think we can use 
+/proc/<pid>/smaps, which will distinguish between 'shared' pages and
+'dirty' pages.  Dirty is what we care about, as they are unique to the 
+child process. 
+- Test with Java
+- Test with Golang
+- use peek to capture and serialize actual JSON body, not just URL params. 
+- figure out how peek logic will work with SSL encrpytion.  Presumably we
+need to override openssl read calls to get the plain-text? 
+- Capture total memory + CPU used. 
+- Capture other "inputs" that would impact our modeling for latency, including
+database latency + inputs (parse db client protocol using peek), and remote
+webservice calls latency + inputs (to start, just assume JSON). 
+
 
