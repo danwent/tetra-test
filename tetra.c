@@ -11,6 +11,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h> 
+#include <poll.h> 
+#include <sys/epoll.h>
 
 #define DATA_FNAME "tetra-data.txt" 
 
@@ -37,8 +39,13 @@ void reg_handler() {
 
 // fn pointers to real libc calls
 int (*real_accept_fn)(int, struct sockaddr*, socklen_t*) = NULL;  
+int (*real_accept4_fn)(int, struct sockaddr*, socklen_t*, int) = NULL;  
 int (*real_close_fn)(int) = NULL;
 int (*real_select_fn)(int, fd_set*, fd_set*, fd_set*, struct timeval*) = NULL; 
+int (*real_pselect_fn)(int, fd_set*, fd_set*, fd_set*, const struct timespec*, const sigset_t *sigmask) = NULL; 
+int (*real_poll_fn)(struct pollfd *fds, nfds_t nfds, int timeout) = NULL; 
+int (*real_ppoll_fn)(struct pollfd *fds, nfds_t nfds, 
+          const struct timespec *tmo_p, const sigset_t *sigmask) = NULL; 
 
 // saved state across sys calls
 fd_set *parent_readfds = NULL;  
@@ -47,22 +54,35 @@ int is_child = 0;
 
 void reg_all_fn() { 
     real_select_fn = dlsym(RTLD_NEXT, "select");
+    real_pselect_fn = dlsym(RTLD_NEXT, "pselect");
     real_close_fn = dlsym(RTLD_NEXT, "close");
     real_accept_fn = dlsym(RTLD_NEXT, "accept");
+    real_accept4_fn = dlsym(RTLD_NEXT, "accept4");
+    real_poll_fn = dlsym(RTLD_NEXT, "poll");
+    real_ppoll_fn = dlsym(RTLD_NEXT, "ppoll");
     reg_handler();   
 } 
 
-
-int select(int nfds, fd_set* readfds, fd_set *writefds, fd_set *except_fds, 
-       struct timeval *timeout) { 
+int internal_select(int nfds, fd_set* readfds, fd_set *writefds, 
+    fd_set *except_fds, struct timeval *timeout1,
+    const struct timespec *timeout2, const sigset_t *sigmask, 
+    char is_pselect) {  
+    
     if (!real_select_fn) {
         reg_all_fn();  
     }
-    printf("in select (pid = %d)!\n", getpid());
+    printf("in internal_select (pid = %d)!\n", getpid());
     parent_readfds = readfds;
     int res = 0;
-    while(1) { 
-        res = real_select_fn(nfds, readfds, writefds, except_fds, timeout);
+    while(1) {
+        if(is_pselect){ 
+            res = real_pselect_fn(nfds, readfds, writefds,
+                                 except_fds, timeout2, sigmask);
+
+        } else {  
+            res = real_select_fn(nfds, readfds, writefds,
+                                 except_fds, timeout1);
+        } 
         if (res == -1 && errno == EINTR) { 
             printf("ignoring interrupted selected call\n"); 
         } else { 
@@ -70,6 +90,60 @@ int select(int nfds, fd_set* readfds, fd_set *writefds, fd_set *except_fds,
         } 
     } 
 } 
+
+int select(int nfds, fd_set* readfds, fd_set *writefds, 
+    fd_set *except_fds, struct timeval *timeout) { 
+    internal_select(nfds,readfds,writefds,except_fds,timeout,
+                    NULL, NULL, 0);  
+} 
+
+int pselect(int nfds, fd_set *readfds, fd_set *writefds, 
+    fd_set *except_fds, const struct timespec *timeout, 
+    const sigset_t *sigmask) { 
+    internal_select(nfds,readfds,writefds,except_fds,NULL,
+                    timeout, sigmask, 1);  
+} 
+
+
+int internal_poll(struct pollfd * fds, nfds_t nfds, int timeout1, 
+    const struct timespec *timeout2, const sigset_t *sigmask, 
+    char is_ppoll) {  
+    
+    if (!real_select_fn) {
+        reg_all_fn();  
+    }
+    printf("in internal_poll (pid = %d)!\n", getpid());
+    
+    // TODO (need equiv for poll?) parent_readfds = readfds;
+    int res = 0;
+    while(1) {
+        if(is_ppoll){ 
+            res = real_ppoll_fn(fds, nfds, timeout2, sigmask);
+        } else {  
+            res = real_poll_fn(fds, nfds, timeout1);
+        } 
+        // is below still relevant for poll? 
+        if (res == -1 && errno == EINTR) { 
+            printf("ignoring interrupted poll call\n"); 
+        } else { 
+            return res;  
+        } 
+    } 
+} 
+
+
+
+int poll(struct pollfd *fds, nfds_t nfds, int timeout) { 
+    printf("Poll called \n");
+    internal_poll(fds,nfds,timeout,NULL, NULL, 0);  
+} 
+int ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *tmo_p, 
+          const sigset_t *sigmask) { 
+    printf("P Poll called \n"); 
+    internal_poll(fds,nfds,0,tmo_p, sigmask, 1); 
+} 
+
+
 
 void parse_http_req(int sockfd) { 
     char buf[2048]; 
@@ -93,7 +167,8 @@ void parse_http_req(int sockfd) {
     printf("start = '%s'\n", start);  
     if (!end) { 
         printf("malformed http request (no method): %s\n", buf); 
-        exit(1);  
+        params[0] = 0; // empty string
+        return;  
     } 
 
     *end = 0; 
@@ -101,11 +176,12 @@ void parse_http_req(int sockfd) {
     printf("method = '%s'\n", method);  
 
     // get URL 
-   start = end + 1;   
+    start = end + 1;   
     end = strstr(start, "?");
     if (!end) { 
         printf("malformed http request (no url): %s\n", buf); 
-        exit(1);  
+        params[0] = 0; // empty string
+        return;  
     } 
     *end = 0; 
     strncpy(url, start, 1024); 
@@ -116,7 +192,8 @@ void parse_http_req(int sockfd) {
     end = strstr(start, " "); 
     if (!end) { 
         printf("malformed http request (no params): %s\n", buf); 
-        exit(1);  
+        params[0] = 0; // empty string
+        return;  
     } 
     *end = 0; 
     strncpy(params, start, 1024);
@@ -124,7 +201,19 @@ void parse_http_req(int sockfd) {
     printf("params = '%s'\n", params);  
 } 
 
-int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen){ 
+
+int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) { 
+    accept4(sockfd, addr, addrlen, 0); 
+}
+
+int epoll_wait(int epfd, struct epoll_event *events, 
+               int maxevents, int timeout) { 
+    printf("epoll wait\n"); 
+    exit(1);  
+}  
+
+int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, 
+            int flags){ 
    
     printf("Accept on server socket %d\n", sockfd); 
     if (!real_accept_fn) { 
@@ -188,13 +277,16 @@ int close(int fd) {
         exit(0);  
     } else if (is_child) { 
         // other child close
-        printf("other child close \n"); 
+        return real_close_fn(fd); 
     } else { 
         // parent  
-        printf("parent close \n");  
         return real_close_fn(fd); 
     } 
 } 
+
+
+
+
 
 // generic copy file function (borrowed from internet) 
 int cp(const char *to, const char *from)
