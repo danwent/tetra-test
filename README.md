@@ -5,13 +5,17 @@ just some test code for the tetra concept
 
 Building and Running the dev Docker Container: 
 
-git clone https://github.com/danwent/tetra-test
+git clone https://github.com/danwent/tetra-test 
 
 cd tetra-test
 
 docker build -t tetra-dev .
 
-docker run -it -p 8000:8000 -v ~/tetra:/tetra tetra-dev
+Note: if you didn't clone in your home directory, you will need to update
+the volume portion of the docker run command below to point to your tetra-test
+directory
+
+docker run -it -p 8000:8000 -v ~/tetra-test:/tetra tetra-dev
 
 Note: the following steps happen inside the container.
 
