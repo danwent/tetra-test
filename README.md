@@ -1,29 +1,32 @@
 # tetra-test
 just some test code for the tetra concept
 
-Basic usage: 
-
+# Setup
 
 Building and Running the dev Docker Container: 
+
+git clone https://github.com/danwent/tetra-test
+
+cd tetra-test
 
 docker build -t tetra-dev .
 
 docker run -it -p 8000:8000 -v ~/tetra:/tetra tetra-dev
 
+Note: the following steps happen inside the container.
+
 Build the tetra library and two C test servers: 
 
 ./build_all.sh
+
+# Running with linear regression 
 
 Run the simple accept()-based server (listens on port 8000): 
 
 LD_PRELOAD=./libtetra.so ./simple-server
 
-Run the select()-based server (listens on port 8000): 
-
-LD_PRELOAD=./libtetra.so ./select-server
-
 In another window, hit localhost 8000 with multiple HTTP requests 
-with a query string that has integer values for parameters 
+with a query string that has different integer values for parameters 
 'a', 'b', and 'c'.  Ex: 
 
 wget -qO- 'http://localhost:8000/foo/abc?a=10&b=3&c=4'
@@ -42,6 +45,7 @@ regardless of params.
 
 Example output is like: 
 
+```
 raw_X = [(10, 10, 10), (50, 10, 50), (0, 10, 50), (0, 10, 100), (0, 200, 100), (5, 200, 100), (5, 0, 100), (0, 0, 100), (0, 0, 500)]
 y = [25910, 696126, 10210, 3442, 46646, 63473, 6065, 215, 262]
 1   658.5
@@ -54,3 +58,66 @@ b**3    -0.0
 c   13.61
 c**2    -0.17
 c**3    0.0
+```
+
+# Other server examples
+
+## C  (select) 
+
+Run the select()-based server written in C (listens on port 8000): 
+
+LD_PRELOAD=./libtetra.so ./select-server
+
+## Python (basic) 
+
+Python3 should already be installed in the Docker image.  Just run: 
+
+LD_PRELOAD=./libtetra.so python -m http.server 
+
+## NodeJS (basic) 
+
+Note: this doesn't work.  I finally figured out that this is because 
+nodejs does not use libc to call things like accept(), and instead issues
+a sys-call directly using the sys-call function.  We shoud be able to 
+hook the syscall function and interpose there as well.  With nodejs, this is
+implemented using libuv:  https://github.com/libuv/libuv/blob/v1.x/src/unix/linux-syscalls.c#L241
+
+apt-get install -y nodejs npm 
+git clone https://github.com/heroku/node-js-getting-started.git
+cd node-js-getting-started
+npm install
+LD_PRELOAD=../libtetra.so PORT=8000 nodejs index.js 
+
+## Ruby-on-Rails 
+
+cd
+git clone https://github.com/rbenv/rbenv.git ~/.rbenv
+echo 'export PATH="$HOME/.rbenv/bin:$PATH"' >> ~/.bashrc
+echo 'eval "$(rbenv init -)"' >> ~/.bashrc
+exec $SHELL
+
+git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build
+echo 'export PATH="$HOME/.rbenv/plugins/ruby-build/bin:$PATH"' >> ~/.bashrc
+exec $SHELL
+
+rbenv install 2.3.1
+rbenv global 2.3.1
+
+gem install bundler
+rbenv rehash
+gem install rails -v 4.2.6
+
+rails new myapp
+cd myapp
+bundle install
+rails generate controller welcome
+
+[edit app/views/welcome/index.html.erb to include "hello world"]
+
+[ in file config/routes.rb, uncomment the following line:   root 'welcome#index' ] 
+
+LD_PRELOAD=../libtetra.so rails server -p8000
+
+Note: it is recommended to access this server via localhost:8000 due to some
+rails wierdness that I have yet to investigate. 
+
