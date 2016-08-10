@@ -142,6 +142,40 @@ LD_PRELOAD=../libtetra.so rails server -p8000
 Note: it is recommended to access this server via localhost:8000 due to some
 rails wierdness that I have yet to investigate. 
 
+## Java Spring Boot
+
+
+Note:  This isn't working right now, we never see the 'Hello from Groovy app!'
+printed, nor do we see the latency info of the child thread closing out.  
+Not sure why.  Probably makes sense to 
+go back and try a simpler Java webserver to see if we have problems there. 
+
+apt-get install default-jdk maven
+
+http://repo.spring.io/release/org/springframework/boot/spring-boot-cli/1.1.4.RELEASE/spring-boot-cli-1.1.4.RELEASE-bin.tar.gz
+
+tar -xzf spring-boot-cli-1.1.4.RELEASE-bin.tar.gz 
+
+Create a file called app.groovy with the following contents: 
+
+```
+@RestController
+public class BasicController {
+
+    @RequestMapping("/")
+    String home() {
+        System.out.println("Hello from Groovy app!");
+        "Hello World!"
+    }
+
+}
+```
+
+LD_PRELOAD=../libtetra.so ./bin/spring run app.groovy
+
+
+
+
 ## TODO: 
 - Get data points on actual COW memory overhead.  I think we can use 
 /proc/<pid>/smaps, which will distinguish between 'shared' pages and

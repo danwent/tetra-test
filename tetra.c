@@ -47,8 +47,12 @@ int (*real_poll_fn)(struct pollfd *fds, nfds_t nfds, int timeout) = NULL;
 int (*real_ppoll_fn)(struct pollfd *fds, nfds_t nfds, 
           const struct timespec *tmo_p, const sigset_t *sigmask) = NULL; 
 
+int (*real_epoll_wait_fn)(int epfd, struct epoll_event *events, 
+               int maxevents, int timeout) = NULL; 
+
+
 // saved state across sys calls
-fd_set *parent_readfds = NULL;  
+fd_set *parent_readfds = NULL;  // for select 
 int child_accept_fd = -1; 
 int is_child = 0; 
 
@@ -60,6 +64,7 @@ void reg_all_fn() {
     real_accept4_fn = dlsym(RTLD_NEXT, "accept4");
     real_poll_fn = dlsym(RTLD_NEXT, "poll");
     real_ppoll_fn = dlsym(RTLD_NEXT, "ppoll");
+    real_epoll_wait_fn = dlsym(RTLD_NEXT, "epoll_wait"); 
     reg_handler();   
 } 
 
@@ -179,7 +184,7 @@ void parse_http_req(int sockfd) {
     start = end + 1;   
     end = strstr(start, "?");
     if (!end) { 
-        printf("malformed http request (no url): %s\n", buf); 
+        printf("malformed http request (no query params): %s\n", buf); 
         params[0] = 0; // empty string
         return;  
     } 
@@ -208,8 +213,22 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 
 int epoll_wait(int epfd, struct epoll_event *events, 
                int maxevents, int timeout) { 
+    if (!real_select_fn) {
+        reg_all_fn();  
+    }
     printf("epoll wait\n"); 
-    exit(1);  
+    
+    int res = 0;
+    while(1) {
+        res = real_epoll_wait_fn(epfd, events, maxevents, timeout);
+        
+        // is below still relevant for poll? 
+        if (res == -1 && errno == EINTR) { 
+            printf("ignoring interrupted epoll_wait call\n"); 
+        } else { 
+            return res;  
+        } 
+    } 
 }  
 
 int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, 
@@ -226,11 +245,11 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
         // child
         is_child = 1;  
         child_accept_fd = fd;
+        printf("child accept - pid = %d\n", getpid());
         parse_http_req(fd); 
  
         // start latency measurement for this request
         gettimeofday(&start, NULL);  
-        printf("child accept - pid = %d\n", getpid());
         return fd;     
     } else { 
         // parent just closes sock, then 
@@ -241,8 +260,9 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
         printf("parent accept - pid = %d \n", getpid());
         if(parent_readfds) { 
             FD_CLR(sockfd, parent_readfds);
-        }  
+        } 
         real_close_fn(fd);
+        errno = ECONNABORTED; // try to make server behave nicely
         return -1; 
     } 
 } 
