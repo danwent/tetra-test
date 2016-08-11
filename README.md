@@ -147,14 +147,19 @@ rails wierdness that I have yet to investigate.
 
 Note:  This isn't working right now, we never see the 'Hello from Groovy app!'
 printed, nor do we see the latency info of the child thread closing out.  
-Not sure why.  Probably makes sense to 
-go back and try a simpler Java webserver to see if we have problems there. 
+After a little stracing, it seems like this is because spring actually is doing a lot
+of forking, and we know the simple PoC code isn't going to handle that well.  The 
+webserver itself seems to be running in a forked process, and then it seems that it may
+be the cause that each web request already results in another short-lived forked process. 
+We'll have to look at this in more detail.  
 
 apt-get install default-jdk maven
 
-http://repo.spring.io/release/org/springframework/boot/spring-boot-cli/1.1.4.RELEASE/spring-boot-cli-1.1.4.RELEASE-bin.tar.gz
+wget http://repo.spring.io/release/org/springframework/boot/spring-boot-cli/1.1.4.RELEASE/spring-boot-cli-1.1.4.RELEASE-bin.tar.gz
 
 tar -xzf spring-boot-cli-1.1.4.RELEASE-bin.tar.gz 
+
+cd spring-1.1.4.RELEASE
 
 Create a file called app.groovy with the following contents: 
 
@@ -171,10 +176,13 @@ public class BasicController {
 }
 ```
 
+Create a file called application.properties with the following contents: 
+
+```
+server.port=8000
+```
+
 LD_PRELOAD=../libtetra.so ./bin/spring run app.groovy
-
-
-
 
 ## TODO: 
 - Get data points on actual COW memory overhead.  I think we can use 
