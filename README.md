@@ -184,6 +184,47 @@ server.port=8000
 
 LD_PRELOAD=../libtetra.so ./bin/spring run app.groovy
 
+## Golang
+
+Golang doesn't work.  Golang neither users dynamic-linking (i.e., LD_PRELOAD) nor does it 
+actually use libc.   It seems we would likely either need to recompile, use OS changes, or 
+do binary rewriting.  
+
+Here's how to run a basic golang webserver in the dev container: 
+
+apt-get install software-properties-common
+
+add-apt-repository ppa:ubuntu-lxc/lxd-stable
+
+apt-get update
+
+apt-get install golang
+
+Create file web.go with the following contents: 
+
+```
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func handler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+}
+
+func main() {
+    http.HandleFunc("/", handler)
+    http.ListenAndServe(":8000", nil)
+}
+```
+
+Then run: 
+
+go run web.go
+
+
 ## TODO: 
 - Get data points on actual COW memory overhead.  I think we can use 
 /proc/<pid>/smaps, which will distinguish between 'shared' pages and
